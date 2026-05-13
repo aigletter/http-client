@@ -1,0 +1,36 @@
+{
+    "name": "aigletter/http-client",
+    "description": "Autoparts http client",
+    "type": "library",
+    "autoload": {
+        "psr-4": {
+            "Aigletter\\Autoparts\\HttpClient\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Yurii Orlyk",
+            "email": "aigletter@gmail.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "psr/http-client": "^1.0.3",
+        "psr/simple-cache": "^3.0",
+        "psr/http-factory": "^1.1"
+    },
+    "require-dev": {
+
+    },
+    "suggest": {
+        "illuminate/support": "Required for automatic Laravel integration via the Service Provider",
+        "guzzlehttp/guzzle": "Provides a robust PSR-18 HTTP client and PSR-17 factory implementation"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Aigletter\\Autoparts\\HttpClient\\HttpClientServiceProvider"
+            ]
+        }
+    }
+}
