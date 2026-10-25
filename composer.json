@@ -1,10 +1,10 @@
 {
-    "name": "aigletter/autoparts-http-client",
-    "description": "Autoparts http client",
+    "name": "aigletter/http-client",
+    "description": "Http client",
     "type": "library",
     "autoload": {
         "psr-4": {
-            "Aigletter\\Autoparts\\HttpClient\\": "src/"
+            "Aigletter\\HttpClient\\": "src/"
         }
     },
     "autoload-dev": {
