@@ -50,7 +50,7 @@ class HttpClient implements HttpClientInterface
                 }
             }
 
-            return $this->handleRequest($request);
+            return $this->sendRequest($request);
         });
     }
 
@@ -68,7 +68,7 @@ class HttpClient implements HttpClientInterface
             }
         }
 
-        return $this->handleRequest($request);
+        return $this->sendRequest($request);
     }
 
     public function send(): mixed
@@ -222,13 +222,20 @@ class HttpClient implements HttpClientInterface
         return rtrim($result, '/');
     }
 
-    private function handleRequest(RequestInterface $request): mixed
+    private function sendRequest(RequestInterface $request): mixed
     {
+        if (!array_key_exists('accept', $this->headers)) {
+            $request = $request->withHeader('accept', 'application/json');
+        }
+
         $response = $this->client->sendRequest($request);
 
         $statusCode = $response->getStatusCode();
         if ($statusCode < 200 || $statusCode > 299) {
-            throw new \Exception('Failed to fetch data.' . $response->getBody()->getContents());
+            throw new \Exception(
+                sprintf("Failed to fetch data.\n%s", $response->getBody()->getContents()),
+                $statusCode
+            );
         }
 
         $content = $response->getBody()->getContents();
