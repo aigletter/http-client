@@ -1,6 +1,6 @@
 <?php
 
-namespace Aigletter\Autoparts\HttpClient;
+namespace Aigletter\HttpClient;
 
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;

@@ -1,6 +1,6 @@
 <?php
 
-namespace Aigletter\Autoparts\HttpClient;
+namespace Aigletter\HttpClient;
 
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UriInterface;
