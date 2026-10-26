@@ -19,6 +19,8 @@ interface HttpClientInterface
 
     public function withHeader(string $name, string $value): static;
 
+    public function withToken(string $token): static;
+
     public function withBody(string|array $body): static;
 
     public function withoutCache(): static;
