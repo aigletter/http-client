@@ -172,6 +172,11 @@ class HttpClient implements HttpClientInterface
         return $client;
     }
 
+    public function withToken(string $token): static
+    {
+        return $this->withHeader('Authorization', 'Bearer ' . $token);
+    }
+
     public function withoutCache(): static
     {
         $client = clone $this;
