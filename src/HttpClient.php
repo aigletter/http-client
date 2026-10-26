@@ -29,7 +29,7 @@ class HttpClient implements HttpClientInterface
 
     public function __construct(
         private string $baseUrl,
-        private string $authToken,
+        //private string $authToken,
         private ClientInterface $client,
         private UriFactoryInterface $uriFactory,
         private RequestFactoryInterface $requestFactory,
