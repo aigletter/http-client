@@ -11,6 +11,8 @@ interface HttpClientInterface
 
     public function post(UriInterface|string $url, ?StreamInterface $body): mixed;
 
+    public function put(UriInterface|string $url, ?StreamInterface $body): mixed;
+
     public function withMethod(string $method): static;
 
     public function withPath(string|array $params): static;
@@ -27,7 +29,7 @@ interface HttpClientInterface
 
     public function send(): mixed;
 
-    public function getByParams(array $pathParams = [], array $queryParams = []): mixed;
+    //public function getByParams(array $pathParams = [], array $queryParams = []): mixed;
 
-    public function postByParams(array $pathParams = [], array $queryParams = [], array $body = []): mixed;
+    //public function postByParams(array $pathParams = [], array $queryParams = [], array $body = []): mixed;
 }

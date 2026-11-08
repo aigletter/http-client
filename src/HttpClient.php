@@ -71,6 +71,23 @@ class HttpClient implements HttpClientInterface
         return $this->sendRequest($request);
     }
 
+    public function put(UriInterface|string $url, ?StreamInterface $body): mixed
+    {
+        $request = $this->requestFactory->createRequest('PUT', $url);
+
+        if ($body) {
+            $request = $request->withBody($body);
+        }
+
+        if ($this->headers) {
+            foreach ($this->headers as $name => $value) {
+                $request = $request->withHeader($name, $value);
+            }
+        }
+
+        return $this->sendRequest($request);
+    }
+
     public function send(): mixed
     {
         if ($this->method === 'GET') {
@@ -104,6 +121,20 @@ class HttpClient implements HttpClientInterface
         $stream = $this->makeStream($this->body);
 
         return $this->post($url, $stream);
+    }
+
+    private function sendPut()
+    {
+        $path = $this->makePath($this->path);
+        $url = $this->makeUri($path, $this->query);
+
+        if (!array_key_exists('content-type', $this->headers)) {
+            $this->headers['content-type'] = 'application/json';
+        }
+
+        $stream = $this->makeStream($this->body);
+
+        return $this->put($url, $stream);
     }
 
     private function makeStream(string|array|StreamInterface $content): StreamInterface
@@ -186,15 +217,15 @@ class HttpClient implements HttpClientInterface
         return $client;
     }
 
-    public function getByParams(array $pathParams = [], array $queryParams = []): mixed
+    /*public function getByParams(array $pathParams = [], array $queryParams = []): mixed
     {
         $path = $this->makePath($pathParams);
         $url = $this->makeUri($path, $queryParams);
 
         return $this->get($url);
-    }
+    }*/
 
-    public function postByParams(array $pathParams = [], array $queryParams = [], array $body = []): mixed
+    /*public function postByParams(array $pathParams = [], array $queryParams = [], array $body = []): mixed
     {
         $path = $this->makePath($pathParams);
         $url = $this->makeUri($path, $queryParams);
@@ -203,7 +234,7 @@ class HttpClient implements HttpClientInterface
         $body = $this->streamFactory->createStream($content);
 
         return $this->post($url, $body);
-    }
+    }*/
 
     public function makeUri(string $path, array $params = []): UriInterface
     {
