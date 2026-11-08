@@ -42,13 +42,7 @@ class HttpClient implements HttpClientInterface
     public function get(UriInterface|string $url): mixed
     {
         return $this->getWithCache($url, function () use ($url) {
-            $request = $this->requestFactory->createRequest('GET', $url);
-
-            if ($this->headers) {
-                foreach ($this->headers as $name => $value) {
-                    $request = $request->withHeader($name, $value);
-                }
-            }
+            $request = $this->makeRequest('GET', $url, null);
 
             return $this->sendRequest($request);
         });
@@ -56,98 +50,87 @@ class HttpClient implements HttpClientInterface
 
     public function post(UriInterface|string $url, ?StreamInterface $body): mixed
     {
-        $request = $this->requestFactory->createRequest('POST', $url);
-
-        if ($body) {
-            $request = $request->withBody($body);
-        }
-
-        if ($this->headers) {
-            foreach ($this->headers as $name => $value) {
-                $request = $request->withHeader($name, $value);
-            }
-        }
+        $request = $this->makeRequest('POST', $url, $body);
 
         return $this->sendRequest($request);
     }
 
     public function put(UriInterface|string $url, ?StreamInterface $body): mixed
     {
-        $request = $this->requestFactory->createRequest('PUT', $url);
+        $request = $this->makeRequest('PUT', $url, $body);
 
-        if ($body) {
-            $request = $request->withBody($body);
-        }
+        return $this->sendRequest($request);
+    }
 
-        if ($this->headers) {
-            foreach ($this->headers as $name => $value) {
-                $request = $request->withHeader($name, $value);
-            }
-        }
+    public function options(UriInterface|string $url): mixed
+    {
+        $request = $this->makeRequest('OPTIONS', $url, null);
+
+        return $this->sendRequest($request);
+    }
+
+    public function head(UriInterface|string $url): mixed
+    {
+        $request = $this->makeRequest('HEAD', $url, null);
+
+        return $this->sendRequest($request);
+    }
+
+    public function connect(UriInterface|string $url): mixed
+    {
+        $request = $this->makeRequest('CONNECT', $url, null);
+
+        return $this->sendRequest($request);
+    }
+
+    public function trace(UriInterface|string $url): mixed
+    {
+        $request = $this->makeRequest('TRACE', $url, null);
+
+        return $this->sendRequest($request);
+    }
+
+    public function patch(UriInterface|string $url, ?StreamInterface $body): mixed
+    {
+        $request = $this->makeRequest('PATCH', $url, $body);
+
+        return $this->sendRequest($request);
+    }
+
+    public function delete(UriInterface|string $url): mixed
+    {
+        $request = $this->makeRequest('DELETE', $url, null);
 
         return $this->sendRequest($request);
     }
 
     public function send(): mixed
     {
-        if ($this->method === 'GET') {
-            return $this->sendGet();
-        }
-
-        if ($this->method === 'POST') {
-            return $this->sendPost();
-        }
-
-        throw new \InvalidArgumentException('Invalid HTTP method');
-    }
-
-    private function sendGet()
-    {
         $path = $this->makePath($this->path);
         $url = $this->makeUri($path, $this->query);
 
-        return $this->get($url);
-    }
-
-    private function sendPost()
-    {
-        $path = $this->makePath($this->path);
-        $url = $this->makeUri($path, $this->query);
+        if (in_array($this->method, ['GET', 'HEAD', 'DELETE', 'CONNECT', 'OPTIONS', 'TRACE'])) {
+            return match ($this->method) {
+                'GET' => $this->get($url),
+                'HEAD' => $this->head($url),
+                'DELETE' => $this->delete($url),
+                'CONNECT' => $this->connect($url),
+                'OPTIONS' => $this->options($url),
+                'TRACE' => $this->trace($url),
+            };
+        }
 
         if (!array_key_exists('content-type', $this->headers)) {
             $this->headers['content-type'] = 'application/json';
         }
-
         $stream = $this->makeStream($this->body);
 
-        return $this->post($url, $stream);
-    }
-
-    private function sendPut()
-    {
-        $path = $this->makePath($this->path);
-        $url = $this->makeUri($path, $this->query);
-
-        if (!array_key_exists('content-type', $this->headers)) {
-            $this->headers['content-type'] = 'application/json';
-        }
-
-        $stream = $this->makeStream($this->body);
-
-        return $this->put($url, $stream);
-    }
-
-    private function makeStream(string|array|StreamInterface $content): StreamInterface
-    {
-        if ($content instanceof StreamInterface) {
-            return $content;
-        }
-
-        if (is_array($content)) {
-            $content = json_encode($content, JSON_UNESCAPED_UNICODE);
-        }
-
-        return $this->streamFactory->createStream($content);
+        return match ($this->method) {
+            'POST' => $this->post($url, $stream),
+            'PUT' => $this->put($url, $stream),
+            'PATCH' => $this->patch($url, $stream),
+            default => throw new \InvalidArgumentException('Invalid HTTP method'),
+        };
     }
 
     public function withMethod(string $method): static
@@ -178,6 +161,7 @@ class HttpClient implements HttpClientInterface
         if (is_string($params)) {
             $results = [];
             parse_str($params, $results);
+            $params = $results;
         }
         $client->query = $params;
 
@@ -236,7 +220,7 @@ class HttpClient implements HttpClientInterface
         return $this->post($url, $body);
     }*/
 
-    public function makeUri(string $path, array $params = []): UriInterface
+    private function makeUri(string $path, array $params = []): UriInterface
     {
 
         $uri = $this->baseUri->withPath(rtrim(parse_url($this->baseUrl, PHP_URL_PATH)) . '/' . ltrim($path, '/'));
@@ -248,7 +232,7 @@ class HttpClient implements HttpClientInterface
         return $uri;
     }
 
-    public function makePath(array $params = []): string
+    private function makePath(array $params = []): string
     {
         $result = '';
         foreach ($params as $key => $value) {
@@ -256,6 +240,36 @@ class HttpClient implements HttpClientInterface
             $result .= $current . '/';
         }
         return rtrim($result, '/');
+    }
+
+    private function makeRequest(string $method, UriInterface|string $url, ?StreamInterface $body): RequestInterface
+    {
+        $request = $this->requestFactory->createRequest($method, $url);
+
+        if ($this->headers) {
+            foreach ($this->headers as $name => $value) {
+                $request = $request->withHeader($name, $value);
+            }
+        }
+
+        if ($body) {
+            $request = $request->withBody($body);
+        }
+
+        return $request;
+    }
+
+    private function makeStream(string|array|StreamInterface $content): StreamInterface
+    {
+        if ($content instanceof StreamInterface) {
+            return $content;
+        }
+
+        if (is_array($content)) {
+            $content = json_encode($content, JSON_UNESCAPED_UNICODE);
+        }
+
+        return $this->streamFactory->createStream($content);
     }
 
     private function sendRequest(RequestInterface $request): mixed

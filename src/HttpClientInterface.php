@@ -13,6 +13,18 @@ interface HttpClientInterface
 
     public function put(UriInterface|string $url, ?StreamInterface $body): mixed;
 
+    public function options(UriInterface|string $url): mixed;
+
+    public function head(UriInterface|string $url): mixed;
+
+    public function connect(UriInterface|string $url): mixed;
+
+    public function trace(UriInterface|string $url): mixed;
+
+    public function patch(UriInterface|string $url, ?StreamInterface $body): mixed;
+
+    public function delete(UriInterface|string $url): mixed;
+
     public function withMethod(string $method): static;
 
     public function withPath(string|array $params): static;
@@ -23,7 +35,7 @@ interface HttpClientInterface
 
     public function withToken(string $token): static;
 
-    public function withBody(string|array $body): static;
+    public function withBody(string|array|StreamInterface $body): static;
 
     public function withoutCache(): static;
 
