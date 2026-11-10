@@ -223,7 +223,11 @@ class HttpClient implements HttpClientInterface
     private function makeUri(string $path, array $params = []): UriInterface
     {
 
-        $uri = $this->baseUri->withPath(rtrim(parse_url($this->baseUrl, PHP_URL_PATH)) . '/' . ltrim($path, '/'));
+        $basePath = parse_url($this->baseUrl, PHP_URL_PATH) ?? '';
+
+        $uri = $this->baseUri->withPath(
+            rtrim($basePath, '/') . '/' . ltrim($path, '/')
+        );
 
         if ($params) {
             $uri = $uri->withQuery(http_build_query($params));
