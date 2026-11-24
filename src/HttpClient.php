@@ -23,6 +23,8 @@ class HttpClient implements HttpClientInterface
 
     private string|array|StreamInterface $body = [];
 
+    private array $auth = [];
+
     protected array $headers = [];
 
     public function __construct(
@@ -187,9 +189,16 @@ class HttpClient implements HttpClientInterface
         return $client;
     }
 
-    public function withToken(string $token): static
+    public function withAuth(string $token, ?callable $refreshToken = null): static
     {
-        return $this->withHeader('Authorization', 'Bearer ' . $token);
+        $client = $this->withHeader('Authorization', 'Bearer ' . $token);
+
+        $client->auth = [
+            'token' => $token,
+            'refresh_token' => $refreshToken,
+        ];
+
+        return $client;
     }
 
     private function makeUri(string $path, array $params = []): UriInterface
@@ -254,9 +263,44 @@ class HttpClient implements HttpClientInterface
             $request = $request->withHeader('accept', 'application/json');
         }
 
-        $response = $this->client->sendRequest($request);
+        if ($this->auth) {
+            return $this->sendAuthenticatedRequest($request);
+        }
+
+        return $this->client->sendRequest($request);
+    }
+
+    private function sendAuthenticatedRequest(RequestInterface $request): ResponseInterface
+    {
+        try {
+            $response = $this->client->sendRequest($request);
+
+            if ($response->getStatusCode() === 401) {
+                throw new \Exception((string) $response->getBody(), $response->getStatusCode());
+            }
+        } catch (\Exception $exception) {
+            $refreshToken = $this->getRefreshToken();
+            if ($exception->getCode() !== 401 || $refreshToken === null) {
+                throw $exception;
+            }
+
+            $token = $refreshToken();
+            if (!is_string($token) || $token === '') {
+                throw new \UnexpectedValueException('The token refresh callback must return a non-empty string.');
+            }
+
+            $this->auth['token'] = $token;
+            $this->headers['authorization'] = 'Bearer ' . $token;
+            $request = $request->withHeader('Authorization', 'Bearer ' . $token);
+
+            $response = $this->client->sendRequest($request);
+        }
 
         return $response;
     }
 
+    private function getRefreshToken(): ?callable
+    {
+        return $this->auth['refresh_token'] ?? null;
+    }
 }

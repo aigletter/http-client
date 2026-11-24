@@ -196,7 +196,7 @@ class HttpClientTest extends TestCase
 
         $httpClient
             ->withHeader('X-Trace-Id', 'trace-123')
-            ->withToken('secret-token')
+            ->withAuth('secret-token')
             ->send();
 
         self::assertSame([
@@ -204,6 +204,96 @@ class HttpClientTest extends TestCase
             ['authorization', 'Bearer secret-token'],
             ['accept', 'application/json'],
         ], $headers);
+    }
+
+    public function testRefreshesTokenAfterUnauthorizedResponseAndKeepsIt(): void
+    {
+        $request = $this->createMock(RequestInterface::class);
+        $authorization = null;
+        $request->method('withHeader')
+            ->willReturnCallback(static function (string $name, string $value) use (&$authorization, $request) {
+                if (strtolower($name) === 'authorization') {
+                    $authorization = $value;
+                }
+
+                return $request;
+            });
+
+        $requestFactory = $this->createMock(RequestFactoryInterface::class);
+        $requestFactory->method('createRequest')->willReturn($request);
+
+        $sentAuthorizationHeaders = [];
+        $statuses = [401, 200, 200];
+        $client = $this->createMock(ClientInterface::class);
+        $client->expects(self::exactly(3))
+            ->method('sendRequest')
+            ->willReturnCallback(function () use (&$sentAuthorizationHeaders, &$statuses, &$authorization) {
+                $sentAuthorizationHeaders[] = $authorization;
+
+                return $this->successfulResponse(array_shift($statuses));
+            });
+
+        $uriFactory = $this->createMock(UriFactoryInterface::class);
+        $uriFactory->method('createUri')->willReturn($this->createMock(UriInterface::class));
+        $httpClient = $this->createHttpClient(
+            'http://example.com',
+            $client,
+            $uriFactory,
+            $requestFactory,
+            $this->createMock(StreamFactoryInterface::class),
+        )->withAuth('expired-token', static fn (): string => 'fresh-token');
+
+        self::assertSame(200, $httpClient->get('http://example.com/items')->getStatusCode());
+        self::assertSame(200, $httpClient->get('http://example.com/items')->getStatusCode());
+        self::assertSame([
+            'Bearer expired-token',
+            'Bearer fresh-token',
+            'Bearer fresh-token',
+        ], $sentAuthorizationHeaders);
+    }
+
+    public function testRefreshesTokenWhenUnderlyingClientThrowsUnauthorizedException(): void
+    {
+        $request = $this->createMock(RequestInterface::class);
+        $authorization = null;
+        $request->method('withHeader')
+            ->willReturnCallback(static function (string $name, string $value) use (&$authorization, $request) {
+                if (strtolower($name) === 'authorization') {
+                    $authorization = $value;
+                }
+
+                return $request;
+            });
+
+        $requestFactory = $this->createMock(RequestFactoryInterface::class);
+        $requestFactory->method('createRequest')->willReturn($request);
+
+        $sendCount = 0;
+        $sentAuthorizationHeaders = [];
+        $client = $this->createMock(ClientInterface::class);
+        $client->expects(self::exactly(2))
+            ->method('sendRequest')
+            ->willReturnCallback(function () use (&$sendCount, &$sentAuthorizationHeaders, &$authorization) {
+                $sentAuthorizationHeaders[] = $authorization;
+                if (++$sendCount === 1) {
+                    throw new \Exception('Unauthorized', 401);
+                }
+
+                return $this->successfulResponse();
+            });
+
+        $uriFactory = $this->createMock(UriFactoryInterface::class);
+        $uriFactory->method('createUri')->willReturn($this->createMock(UriInterface::class));
+        $httpClient = $this->createHttpClient(
+            'http://example.com',
+            $client,
+            $uriFactory,
+            $requestFactory,
+            $this->createMock(StreamFactoryInterface::class),
+        )->withAuth('expired-token', static fn (): string => 'fresh-token');
+
+        self::assertSame(200, $httpClient->get('http://example.com/items')->getStatusCode());
+        self::assertSame(['Bearer expired-token', 'Bearer fresh-token'], $sentAuthorizationHeaders);
     }
 
     public function testCachedClientStoresGetResponses(): void
@@ -252,7 +342,7 @@ class HttpClientTest extends TestCase
         return new HttpClient($baseUrl, $client, $uriFactory, $requestFactory, $streamFactory);
     }
 
-    private function successfulResponse(): ResponseInterface
+    private function successfulResponse(int $statusCode = 200): ResponseInterface
     {
         $body = $this->createMock(StreamInterface::class);
         $body->method('getContents')->willReturn('{}');
@@ -261,7 +351,7 @@ class HttpClientTest extends TestCase
         $body->method('tell')->willReturn(0);
 
         $response = $this->createMock(ResponseInterface::class);
-        $response->method('getStatusCode')->willReturn(200);
+        $response->method('getStatusCode')->willReturn($statusCode);
         $response->method('getBody')->willReturn($body);
 
         return $response;
