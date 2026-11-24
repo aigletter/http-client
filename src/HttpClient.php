@@ -23,7 +23,7 @@ class HttpClient implements HttpClientInterface
 
     private string|array|StreamInterface $body = [];
 
-    protected HttpClientAuth $auth;
+    protected HttpClientAuthInterface $auth;
 
     protected array $headers = [];
 
@@ -189,7 +189,7 @@ class HttpClient implements HttpClientInterface
         return $client;
     }
 
-    public function withAuth(HttpClientAuth $auth): static
+    public function withAuth(HttpClientAuthInterface $auth): static
     {
         $client = $this->withHeader('Authorization', 'Bearer ' . $auth->getToken());
 

@@ -36,7 +36,7 @@ interface HttpClientInterface
 
     public function withHeader(string $name, string $value): static;
 
-    public function withAuth(HttpClientAuth $auth): static;
+    public function withAuth(HttpClientAuthInterface $auth): static;
 
     public function withBody(string|array|StreamInterface $body): static;
 

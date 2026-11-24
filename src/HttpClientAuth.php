@@ -4,7 +4,7 @@ namespace Aigletter\HttpClient;
 
 use Closure;
 
-class HttpClientAuth
+class HttpClientAuth implements HttpClientAuthInterface
 {
     private ?Closure $refreshToken;
 
