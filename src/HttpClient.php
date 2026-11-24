@@ -23,7 +23,7 @@ class HttpClient implements HttpClientInterface
 
     private string|array|StreamInterface $body = [];
 
-    private array $auth = [];
+    protected HttpClientAuth $auth;
 
     protected array $headers = [];
 
@@ -189,14 +189,11 @@ class HttpClient implements HttpClientInterface
         return $client;
     }
 
-    public function withAuth(string $token, ?callable $refreshToken = null): static
+    public function withAuth(HttpClientAuth $auth): static
     {
-        $client = $this->withHeader('Authorization', 'Bearer ' . $token);
+        $client = $this->withHeader('Authorization', 'Bearer ' . $auth->getToken());
 
-        $client->auth = [
-            'token' => $token,
-            'refresh_token' => $refreshToken,
-        ];
+        $client->auth = $auth;
 
         return $client;
     }
@@ -259,11 +256,18 @@ class HttpClient implements HttpClientInterface
 
     private function sendRequest(RequestInterface $request): ResponseInterface
     {
+        if (isset($this->auth)) {
+            $authorization = 'Bearer ' . $this->auth->getToken();
+            if (($this->headers['authorization'] ?? null) !== $authorization) {
+                $request = $request->withHeader('Authorization', $authorization);
+            }
+        }
+
         if (!array_key_exists('accept', $this->headers)) {
             $request = $request->withHeader('accept', 'application/json');
         }
 
-        if ($this->auth) {
+        if (isset($this->auth)) {
             return $this->sendAuthenticatedRequest($request);
         }
 
@@ -279,17 +283,16 @@ class HttpClient implements HttpClientInterface
                 throw new \Exception((string) $response->getBody(), $response->getStatusCode());
             }
         } catch (\Exception $exception) {
-            $refreshToken = $this->getRefreshToken();
-            if ($exception->getCode() !== 401 || $refreshToken === null) {
+            if ($exception->getCode() !== 401) {
                 throw $exception;
             }
 
-            $token = $refreshToken();
-            if (!is_string($token) || $token === '') {
-                throw new \UnexpectedValueException('The token refresh callback must return a non-empty string.');
+            $token = $this->auth->refreshToken();
+
+            if (!$token) {
+                throw new \Exception('Unauthorized', 401);
             }
 
-            $this->auth['token'] = $token;
             $this->headers['authorization'] = 'Bearer ' . $token;
             $request = $request->withHeader('Authorization', 'Bearer ' . $token);
 
@@ -297,10 +300,5 @@ class HttpClient implements HttpClientInterface
         }
 
         return $response;
-    }
-
-    private function getRefreshToken(): ?callable
-    {
-        return $this->auth['refresh_token'] ?? null;
     }
 }

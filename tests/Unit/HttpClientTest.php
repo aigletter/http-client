@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use Aigletter\HttpClient\HttpClient;
 use Aigletter\HttpClient\CachedHttpClient;
+use Aigletter\HttpClient\HttpClientAuth;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Client\ClientInterface;
@@ -196,7 +197,7 @@ class HttpClientTest extends TestCase
 
         $httpClient
             ->withHeader('X-Trace-Id', 'trace-123')
-            ->withAuth('secret-token')
+            ->withAuth(new HttpClientAuth('secret-token'))
             ->send();
 
         self::assertSame([
@@ -241,15 +242,47 @@ class HttpClientTest extends TestCase
             $uriFactory,
             $requestFactory,
             $this->createMock(StreamFactoryInterface::class),
-        )->withAuth('expired-token', static fn (): string => 'fresh-token');
+        )->withAuth(new HttpClientAuth('expired-token', static fn (): string => 'fresh-token'));
+        $clientWithSharedAuth = $httpClient->withHeader('X-Client-Variant', 'second');
 
         self::assertSame(200, $httpClient->get('http://example.com/items')->getStatusCode());
-        self::assertSame(200, $httpClient->get('http://example.com/items')->getStatusCode());
+        self::assertSame(200, $clientWithSharedAuth->get('http://example.com/items')->getStatusCode());
         self::assertSame([
             'Bearer expired-token',
             'Bearer fresh-token',
             'Bearer fresh-token',
         ], $sentAuthorizationHeaders);
+    }
+
+    public function testUnauthorizedResponseWithoutRefreshCallbackRemainsUnauthorized(): void
+    {
+        $request = $this->createMock(RequestInterface::class);
+        $request->method('withHeader')->willReturnSelf();
+        $requestFactory = $this->createMock(RequestFactoryInterface::class);
+        $requestFactory->method('createRequest')->willReturn($request);
+
+        $client = $this->createMock(ClientInterface::class);
+        $client->expects(self::once())
+            ->method('sendRequest')
+            ->willReturn($this->successfulResponse(401));
+
+        $uriFactory = $this->createMock(UriFactoryInterface::class);
+        $uriFactory->method('createUri')->willReturn($this->createMock(UriInterface::class));
+        $httpClient = $this->createHttpClient(
+            'http://example.com',
+            $client,
+            $uriFactory,
+            $requestFactory,
+            $this->createMock(StreamFactoryInterface::class),
+        )->withAuth(new HttpClientAuth('expired-token'));
+
+        try {
+            $httpClient->get('http://example.com/items');
+            self::fail('Expected an unauthorized exception.');
+        } catch (\Exception $exception) {
+            self::assertSame(401, $exception->getCode());
+            self::assertSame('Unauthorized', $exception->getMessage());
+        }
     }
 
     public function testRefreshesTokenWhenUnderlyingClientThrowsUnauthorizedException(): void
@@ -290,7 +323,7 @@ class HttpClientTest extends TestCase
             $uriFactory,
             $requestFactory,
             $this->createMock(StreamFactoryInterface::class),
-        )->withAuth('expired-token', static fn (): string => 'fresh-token');
+        )->withAuth(new HttpClientAuth('expired-token', static fn (): string => 'fresh-token'));
 
         self::assertSame(200, $httpClient->get('http://example.com/items')->getStatusCode());
         self::assertSame(['Bearer expired-token', 'Bearer fresh-token'], $sentAuthorizationHeaders);

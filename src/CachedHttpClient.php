@@ -71,6 +71,9 @@ class CachedHttpClient extends HttpClient implements CachedHttpClientInterface
     private function cacheKey(UriInterface|string $url): string
     {
         $headers = $this->headers;
+        if (isset($this->auth)) {
+            $headers['authorization'] = 'Bearer ' . $this->auth->getToken();
+        }
         ksort($headers);
 
         return hash('sha256', serialize([
