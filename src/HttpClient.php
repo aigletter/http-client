@@ -5,11 +5,11 @@ namespace Aigletter\HttpClient;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UriFactoryInterface;
 use Psr\Http\Message\UriInterface;
-use Psr\SimpleCache\CacheInterface;
 
 class HttpClient implements HttpClientInterface
 {
@@ -21,11 +21,9 @@ class HttpClient implements HttpClientInterface
 
     private string|array $query = [];
 
-    private array $headers = [];
-
-    private bool $withCache = true;
-
     private string|array|StreamInterface $body = [];
+
+    protected array $headers = [];
 
     public function __construct(
         private string $baseUrl,
@@ -33,78 +31,80 @@ class HttpClient implements HttpClientInterface
         private ClientInterface $client,
         private UriFactoryInterface $uriFactory,
         private RequestFactoryInterface $requestFactory,
-        private StreamFactoryInterface $streamFactory,
-        private ?CacheInterface $cache = null,
+        protected StreamFactoryInterface $streamFactory,
     ) {
         $this->baseUri = $this->uriFactory->createUri($this->baseUrl);
     }
 
-    public function get(UriInterface|string $url): mixed
+    public function get(UriInterface|string $url): ResponseInterface
     {
-        return $this->getWithCache($url, function () use ($url) {
-            $request = $this->makeRequest('GET', $url, null);
+        $request = $this->makeRequest('GET', $url, null);
 
-            return $this->sendRequest($request);
-        });
+        return $this->sendRequest($request);
     }
 
-    public function post(UriInterface|string $url, ?StreamInterface $body): mixed
+    public function getJson(UriInterface|string $url): mixed
+    {
+        return json_decode($this->get($url)->getBody()->getContents(), false, 512, JSON_THROW_ON_ERROR);
+    }
+
+    public function post(UriInterface|string $url, ?StreamInterface $body): ResponseInterface
     {
         $request = $this->makeRequest('POST', $url, $body);
 
         return $this->sendRequest($request);
     }
 
-    public function put(UriInterface|string $url, ?StreamInterface $body): mixed
+    public function put(UriInterface|string $url, ?StreamInterface $body): ResponseInterface
     {
         $request = $this->makeRequest('PUT', $url, $body);
 
         return $this->sendRequest($request);
     }
 
-    public function options(UriInterface|string $url): mixed
+    public function options(UriInterface|string $url): ResponseInterface
     {
         $request = $this->makeRequest('OPTIONS', $url, null);
 
         return $this->sendRequest($request);
     }
 
-    public function head(UriInterface|string $url): mixed
+    public function head(UriInterface|string $url): ResponseInterface
     {
         $request = $this->makeRequest('HEAD', $url, null);
 
         return $this->sendRequest($request);
     }
 
-    public function connect(UriInterface|string $url): mixed
+    public function connect(UriInterface|string $url): ResponseInterface
     {
         $request = $this->makeRequest('CONNECT', $url, null);
 
         return $this->sendRequest($request);
     }
 
-    public function trace(UriInterface|string $url): mixed
+    public function trace(UriInterface|string $url): ResponseInterface
     {
         $request = $this->makeRequest('TRACE', $url, null);
 
         return $this->sendRequest($request);
     }
 
-    public function patch(UriInterface|string $url, ?StreamInterface $body): mixed
+    public function patch(UriInterface|string $url, ?StreamInterface $body): ResponseInterface
     {
         $request = $this->makeRequest('PATCH', $url, $body);
 
         return $this->sendRequest($request);
     }
 
-    public function delete(UriInterface|string $url): mixed
+    public function delete(UriInterface|string $url): ResponseInterface
     {
         $request = $this->makeRequest('DELETE', $url, null);
 
         return $this->sendRequest($request);
     }
 
-    public function send(): mixed
+    public function send(): ResponseInterface
     {
         $path = $this->makePath($this->path);
         $url = $this->makeUri($path, $this->query);
@@ -192,34 +192,6 @@ class HttpClient implements HttpClientInterface
         return $this->withHeader('Authorization', 'Bearer ' . $token);
     }
 
-    public function withoutCache(): static
-    {
-        $client = clone $this;
-
-        $client->withCache = false;
-
-        return $client;
-    }
-
-    /*public function getByParams(array $pathParams = [], array $queryParams = []): mixed
-    {
-        $path = $this->makePath($pathParams);
-        $url = $this->makeUri($path, $queryParams);
-
-        return $this->get($url);
-    }*/
-
-    /*public function postByParams(array $pathParams = [], array $queryParams = [], array $body = []): mixed
-    {
-        $path = $this->makePath($pathParams);
-        $url = $this->makeUri($path, $queryParams);
-
-        $content = json_encode($body, JSON_UNESCAPED_UNICODE);
-        $body = $this->streamFactory->createStream($content);
-
-        return $this->post($url, $body);
-    }*/
-
     private function makeUri(string $path, array $params = []): UriInterface
     {
 
@@ -276,7 +248,7 @@ class HttpClient implements HttpClientInterface
         return $this->streamFactory->createStream($content);
     }
 
-    private function sendRequest(RequestInterface $request): mixed
+    private function sendRequest(RequestInterface $request): ResponseInterface
     {
         if (!array_key_exists('accept', $this->headers)) {
             $request = $request->withHeader('accept', 'application/json');
@@ -284,42 +256,7 @@ class HttpClient implements HttpClientInterface
 
         $response = $this->client->sendRequest($request);
 
-        $statusCode = $response->getStatusCode();
-        if ($statusCode < 200 || $statusCode > 299) {
-            throw new \Exception(
-                sprintf("Failed to fetch data.\n%s", $response->getBody()->getContents()),
-                $statusCode
-            );
-        }
-
-        $content = $response->getBody()->getContents();
-
-        return json_decode($content);
+        return $response;
     }
 
-    private function getWithCache(UriInterface|string $url, callable $callback): mixed
-    {
-        $key = $this->getCacheKey($url);
-        if ($this->withCache && isset($this->cache) && $this->cache->has($key)) {
-            // TODO Uncomment
-            return $this->cache->get($key);
-        }
-
-        $result = $callback($url);
-
-        if (isset($this->cache)) {
-            $this->cache->set($key, $result);
-        }
-
-        return $result;
-    }
-
-    private function getCacheKey(UriInterface|string $url): string
-    {
-        if (!is_string($url)) {
-            $url = $url->__toString();
-        }
-
-        return md5($url);
-    }
 }

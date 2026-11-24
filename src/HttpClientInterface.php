@@ -3,27 +3,30 @@
 namespace Aigletter\HttpClient;
 
 use Psr\Http\Message\StreamInterface;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\UriInterface;
 
 interface HttpClientInterface
 {
-    public function get(UriInterface|string $url): mixed;
+    public function get(UriInterface|string $url): ResponseInterface;
 
-    public function post(UriInterface|string $url, ?StreamInterface $body): mixed;
+    public function getJson(UriInterface|string $url): mixed;
 
-    public function put(UriInterface|string $url, ?StreamInterface $body): mixed;
+    public function post(UriInterface|string $url, ?StreamInterface $body): ResponseInterface;
 
-    public function options(UriInterface|string $url): mixed;
+    public function put(UriInterface|string $url, ?StreamInterface $body): ResponseInterface;
 
-    public function head(UriInterface|string $url): mixed;
+    public function options(UriInterface|string $url): ResponseInterface;
 
-    public function connect(UriInterface|string $url): mixed;
+    public function head(UriInterface|string $url): ResponseInterface;
 
-    public function trace(UriInterface|string $url): mixed;
+    public function connect(UriInterface|string $url): ResponseInterface;
 
-    public function patch(UriInterface|string $url, ?StreamInterface $body): mixed;
+    public function trace(UriInterface|string $url): ResponseInterface;
 
-    public function delete(UriInterface|string $url): mixed;
+    public function patch(UriInterface|string $url, ?StreamInterface $body): ResponseInterface;
+
+    public function delete(UriInterface|string $url): ResponseInterface;
 
     public function withMethod(string $method): static;
 
@@ -37,11 +40,5 @@ interface HttpClientInterface
 
     public function withBody(string|array|StreamInterface $body): static;
 
-    public function withoutCache(): static;
-
-    public function send(): mixed;
-
-    //public function getByParams(array $pathParams = [], array $queryParams = []): mixed;
-
-    //public function postByParams(array $pathParams = [], array $queryParams = [], array $body = []): mixed;
+    public function send(): ResponseInterface;
 }

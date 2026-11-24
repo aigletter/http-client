@@ -3,11 +3,13 @@
 namespace Tests\Unit;
 
 use Aigletter\HttpClient\HttpClient;
+use Aigletter\HttpClient\CachedHttpClient;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
@@ -84,7 +86,7 @@ class HttpClientTest extends TestCase
             $httpClient = $httpClient->withBody($body);
         }
 
-        self::assertEquals((object) [], $httpClient->send());
+        self::assertInstanceOf(ResponseInterface::class, $httpClient->send());
     }
 
     public static function supportedMethods(): iterable
@@ -140,6 +142,29 @@ class HttpClientTest extends TestCase
             ->send();
     }
 
+    public function testGetJsonDecodesTheResponseBody(): void
+    {
+        $request = $this->createMock(RequestInterface::class);
+        $request->method('withHeader')->willReturnSelf();
+        $requestFactory = $this->createMock(RequestFactoryInterface::class);
+        $requestFactory->method('createRequest')->willReturn($request);
+
+        $client = $this->createMock(ClientInterface::class);
+        $client->method('sendRequest')->willReturn($this->successfulResponse());
+        $uriFactory = $this->createMock(UriFactoryInterface::class);
+        $uriFactory->method('createUri')->willReturn($this->createMock(UriInterface::class));
+
+        $httpClient = $this->createHttpClient(
+            'http://example.com',
+            $client,
+            $uriFactory,
+            $requestFactory,
+            $this->createMock(StreamFactoryInterface::class),
+        );
+
+        self::assertEquals((object) [], $httpClient->getJson('http://example.com/items'));
+    }
+
     public function testHeaderAndTokenBuildersApplyHeaders(): void
     {
         $uri = $this->createMock(UriInterface::class);
@@ -181,13 +206,12 @@ class HttpClientTest extends TestCase
         ], $headers);
     }
 
-    public function testWithoutCacheSkipsCacheReads(): void
+    public function testCachedClientStoresGetResponses(): void
     {
         $url = 'http://example.com/items';
+        $cacheKey = hash('sha256', serialize(['url' => $url, 'headers' => []]));
         $cache = $this->createMock(CacheInterface::class);
-        $cache->expects(self::never())->method('has');
-        $cache->expects(self::never())->method('get');
-        $cache->expects(self::once())->method('set')->with(md5($url), (object) []);
+        $cache->expects(self::once())->method('has')->with($cacheKey)->willReturn(false);
 
         $request = $this->createMock(RequestInterface::class);
         $request->method('withHeader')->willReturnSelf();
@@ -200,16 +224,22 @@ class HttpClientTest extends TestCase
         $client = $this->createMock(ClientInterface::class);
         $client->expects(self::once())->method('sendRequest')->willReturn($this->successfulResponse());
 
-        $httpClient = new HttpClient(
+        $uriFactory = $this->createMock(UriFactoryInterface::class);
+        $uriFactory->method('createUri')->willReturn($this->createMock(UriInterface::class));
+
+        $httpClient = new CachedHttpClient(
             'http://example.com',
             $client,
-            $this->createMock(UriFactoryInterface::class),
+            $uriFactory,
             $requestFactory,
             $this->createMock(StreamFactoryInterface::class),
             $cache,
+            $this->createMock(ResponseFactoryInterface::class),
         );
 
-        $httpClient->withoutCache()->get($url);
+        $cache->expects(self::once())->method('set')->with($cacheKey, self::anything(), 60);
+
+        $httpClient->withCacheTtl(60)->get($url);
     }
 
     private function createHttpClient(
@@ -226,6 +256,9 @@ class HttpClientTest extends TestCase
     {
         $body = $this->createMock(StreamInterface::class);
         $body->method('getContents')->willReturn('{}');
+        $body->method('__toString')->willReturn('{}');
+        $body->method('isSeekable')->willReturn(true);
+        $body->method('tell')->willReturn(0);
 
         $response = $this->createMock(ResponseInterface::class);
         $response->method('getStatusCode')->willReturn(200);
