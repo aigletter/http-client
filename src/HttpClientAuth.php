@@ -20,6 +20,11 @@ class HttpClientAuth implements HttpClientAuthInterface
         return $this->token;
     }
 
+    public function hasRefreshToken(): bool
+    {
+        return $this->refreshToken !== null;
+    }
+
     public function refreshToken(): ?string
     {
         if ($this->refreshToken === null) {

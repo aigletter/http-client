@@ -276,6 +276,14 @@ class HttpClient implements HttpClientInterface
 
     private function sendAuthenticatedRequest(RequestInterface $request): ResponseInterface
     {
+        $body = $request->getBody();
+        $bodyPosition = null;
+        try {
+            $bodyPosition = $body->tell();
+        } catch (\Throwable) {
+            // A non-seekable stream is only relevant if a retry becomes necessary.
+        }
+
         try {
             $response = $this->client->sendRequest($request);
 
@@ -287,10 +295,34 @@ class HttpClient implements HttpClientInterface
                 throw $exception;
             }
 
+            if (!$this->auth->hasRefreshToken()) {
+                throw new \Exception('Unauthorized', 401, $exception);
+            }
+
+            if ($body->getSize() !== 0) {
+                if ($bodyPosition === null || !$body->isSeekable()) {
+                    throw new \RuntimeException(
+                        'Cannot retry an authenticated request because its body stream cannot be rewound.',
+                        401,
+                        $exception,
+                    );
+                }
+
+                try {
+                    $body->seek($bodyPosition);
+                } catch (\Throwable $rewindException) {
+                    throw new \RuntimeException(
+                        'Cannot retry an authenticated request because its body stream could not be rewound.',
+                        401,
+                        $rewindException,
+                    );
+                }
+            }
+
             $token = $this->auth->refreshToken();
 
             if (!$token) {
-                throw new \Exception('Unauthorized', 401);
+                throw new \Exception('Unauthorized', 401, $exception);
             }
 
             $this->headers['authorization'] = 'Bearer ' . $token;
