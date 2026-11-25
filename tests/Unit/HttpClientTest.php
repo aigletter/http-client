@@ -210,6 +210,11 @@ class HttpClientTest extends TestCase
     public function testRefreshesTokenAfterUnauthorizedResponseAndKeepsIt(): void
     {
         $request = $this->createMock(RequestInterface::class);
+        $emptyBody = $this->createMock(StreamInterface::class);
+        $emptyBody->expects(self::once())->method('getSize')->willReturn(0);
+        $emptyBody->expects(self::exactly(2))->method('tell')->willReturn(0);
+        $emptyBody->expects(self::never())->method('isSeekable');
+        $request->method('getBody')->willReturn($emptyBody);
         $authorization = null;
         $request->method('withHeader')
             ->willReturnCallback(static function (string $name, string $value) use (&$authorization, $request) {
@@ -288,6 +293,11 @@ class HttpClientTest extends TestCase
     public function testRefreshesTokenWhenUnderlyingClientThrowsUnauthorizedException(): void
     {
         $request = $this->createMock(RequestInterface::class);
+        $emptyBody = $this->createMock(StreamInterface::class);
+        $emptyBody->method('getSize')->willReturn(0);
+        $emptyBody->method('tell')->willReturn(0);
+        $emptyBody->method('isSeekable')->willReturn(true);
+        $request->method('getBody')->willReturn($emptyBody);
         $authorization = null;
         $request->method('withHeader')
             ->willReturnCallback(static function (string $name, string $value) use (&$authorization, $request) {
@@ -329,6 +339,100 @@ class HttpClientTest extends TestCase
         self::assertSame(['Bearer expired-token', 'Bearer fresh-token'], $sentAuthorizationHeaders);
     }
 
+    public function testRewindsRequestBodyBeforeRetryingAfterUnauthorizedResponse(): void
+    {
+        $contents = 'multipart-file-content';
+        $position = 0;
+        $body = $this->createMock(StreamInterface::class);
+        $body->method('getSize')->willReturn(strlen($contents));
+        $body->method('isSeekable')->willReturn(true);
+        $body->method('tell')->willReturnCallback(static fn () => $position);
+        $body->method('seek')->willReturnCallback(static function (int $offset) use (&$position): void {
+            $position = $offset;
+        });
+        $body->method('getContents')->willReturnCallback(static function () use (&$position, $contents): string {
+            $remaining = substr($contents, $position);
+            $position = strlen($contents);
+
+            return $remaining;
+        });
+
+        $request = $this->createMock(RequestInterface::class);
+        $request->method('getBody')->willReturn($body);
+        $request->method('withHeader')->willReturnSelf();
+        $request->method('withBody')->willReturnSelf();
+        $requestFactory = $this->createMock(RequestFactoryInterface::class);
+        $requestFactory->method('createRequest')->willReturn($request);
+
+        $sentBodies = [];
+        $statuses = [401, 200];
+        $client = $this->createMock(ClientInterface::class);
+        $client->expects(self::exactly(2))
+            ->method('sendRequest')
+            ->willReturnCallback(function (RequestInterface $request) use (&$sentBodies, &$statuses) {
+                $sentBodies[] = $request->getBody()->getContents();
+
+                return $this->successfulResponse(array_shift($statuses));
+            });
+
+        $uriFactory = $this->createMock(UriFactoryInterface::class);
+        $uriFactory->method('createUri')->willReturn($this->createMock(UriInterface::class));
+        $httpClient = $this->createHttpClient(
+            'http://example.com',
+            $client,
+            $uriFactory,
+            $requestFactory,
+            $this->createMock(StreamFactoryInterface::class),
+        )->withAuth(new HttpClientAuth('expired-token', static fn (): string => 'fresh-token'));
+
+        self::assertSame(200, $httpClient->post('http://example.com/upload', $body)->getStatusCode());
+        self::assertSame([$contents, $contents], $sentBodies);
+    }
+
+    public function testDoesNotRetryUnauthorizedRequestWithNonSeekableBody(): void
+    {
+        $body = $this->createMock(StreamInterface::class);
+        $body->method('getSize')->willReturn(null);
+        $body->method('isSeekable')->willReturn(false);
+
+        $request = $this->createMock(RequestInterface::class);
+        $request->method('getBody')->willReturn($body);
+        $request->method('withHeader')->willReturnSelf();
+        $request->method('withBody')->willReturnSelf();
+        $requestFactory = $this->createMock(RequestFactoryInterface::class);
+        $requestFactory->method('createRequest')->willReturn($request);
+
+        $client = $this->createMock(ClientInterface::class);
+        $client->expects(self::once())
+            ->method('sendRequest')
+            ->willThrowException(new \Exception('Unauthorized', 401));
+
+        $refreshCalled = false;
+        $uriFactory = $this->createMock(UriFactoryInterface::class);
+        $uriFactory->method('createUri')->willReturn($this->createMock(UriInterface::class));
+        $httpClient = $this->createHttpClient(
+            'http://example.com',
+            $client,
+            $uriFactory,
+            $requestFactory,
+            $this->createMock(StreamFactoryInterface::class),
+        )->withAuth(new HttpClientAuth('expired-token', static function () use (&$refreshCalled): string {
+            $refreshCalled = true;
+
+            return 'fresh-token';
+        }));
+
+        try {
+            $httpClient->post('http://example.com/upload', $body);
+            self::fail('Expected a non-replayable body exception.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame(401, $exception->getCode());
+            self::assertStringContainsString('body stream cannot be rewound', $exception->getMessage());
+        }
+
+        self::assertFalse($refreshCalled);
+    }
+
     public function testCachedClientStoresGetResponses(): void
     {
         $url = 'http://example.com/items';
@@ -356,8 +460,8 @@ class HttpClientTest extends TestCase
             $uriFactory,
             $requestFactory,
             $this->createMock(StreamFactoryInterface::class),
-            $cache,
             $this->createMock(ResponseFactoryInterface::class),
+            $cache,
         );
 
         $cache->expects(self::once())->method('set')->with($cacheKey, self::anything(), 60);
