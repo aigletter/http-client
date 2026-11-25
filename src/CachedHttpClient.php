@@ -24,8 +24,8 @@ class CachedHttpClient extends HttpClient implements CachedHttpClientInterface
         UriFactoryInterface $uriFactory,
         RequestFactoryInterface $requestFactory,
         StreamFactoryInterface $streamFactory,
-        private CacheInterface $cache,
         private ResponseFactoryInterface $responseFactory,
+        private CacheInterface $cache,
     ) {
         parent::__construct($baseUrl, $client, $uriFactory, $requestFactory, $streamFactory);
     }
